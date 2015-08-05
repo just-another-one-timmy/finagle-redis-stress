@@ -1,4 +1,4 @@
-package com.timmy.redis.simple
+package com.timmy.redis.http
 
 import com.twitter.app.GlobalFlag
 

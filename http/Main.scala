@@ -1,5 +1,8 @@
-package com.timmy.redis.simple
+package com.timmy.redis.http
 
+import com.twitter.finagle.{Httpx, Service}
+import com.twitter.finagle.httpx
+import com.twitter.util.{Await, Future}
 import com.twitter.app.App
 import com.twitter.app.Flag
 import com.twitter.finagle.{Service, ServiceFactory}
@@ -8,7 +11,7 @@ import java.util.concurrent.atomic.AtomicLong
 import com.twitter.io.Buf
 import com.twitter.finagle.redis.{Client => RedisClient}
 import org.jboss.netty.buffer.ChannelBuffer
-import com.twitter.finagle.redis.util.StringToChannelBuffer
+import com.twitter.finagle.redis.util.{StringToChannelBuffer, CBToString}
 import com.twitter.finagle.builder.ClientBuilder
 import com.twitter.finagle.redis.{Redis => RedisCodec}
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory
@@ -26,29 +29,23 @@ class PersistentService[Req, Rep](factory: ServiceFactory[Req, Rep]) extends Ser
     }
 }
 
-object RedisStress extends App {
-  val count = new AtomicLong
-
-  def proc(client: RedisClient, key: ChannelBuffer) {
-    client.get(key) onSuccess { _ =>
-      count.incrementAndGet()
-      proc(client, key)
-    }
-  }
+object Server extends App {
+  val key = StringToChannelBuffer("A20")
 
   def main() {
     val concurrency = Concurrency()
     val hosts = Hosts()
-    val keySize = KeySize()
     val valueSize = ValueSize()
     val nworkers = Nworkers()
 
-    println(hosts)
+    println("Hi there.")
     var builder = ClientBuilder()
       .name("rc")
       .codec(RedisCodec())
       .hostConnectionLimit(concurrency)
       .hosts(hosts)
+
+    println(hosts)
 
     if (nworkers > -1) {
       builder = builder.channelFactory(
@@ -60,27 +57,23 @@ object RedisStress extends App {
       )
     }
 
-    // val key = StringToChannelBuffer("x" * keySize)
-    // val value = StringToChannelBuffer(Buf.Utf8("y" * valueSize).toString)
-    val key = StringToChannelBuffer("A20")
-
     val factory = builder.buildFactory()
-    val elapsed = Stopwatch.start()
+    val svc = new PersistentService(factory)
+    val redisClient: RedisClient = RedisClient(svc)
 
-    for (_ <- 0 until concurrency) {
-      val svc = new PersistentService(factory)
-      val client = RedisClient(svc)
-      proc(client, key)
+    val service = new Service[httpx.Request, httpx.Response] {
+      def apply(req: httpx.Request): Future[httpx.Response] =
+        redisClient.get(key).map(response => {
+          val res = httpx.Response()
+          res.contentString = response match {
+            case Some(c) => CBToString(response.get)
+            case None => "[None]"
+          }
+          res
+        })
     }
-
-    while (true) {
-      Thread.sleep(5000)
-
-      val howlong = elapsed()
-      val howmuch = count.get()
-      assert(howmuch > 0)
-      printf("%d QPS\n", howmuch / howlong.inSeconds)
-    }
+    val server = Httpx.serve(":8200", service)
+    Await.ready(server)
   }
 
 }
