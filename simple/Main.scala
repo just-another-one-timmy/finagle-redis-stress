@@ -33,8 +33,6 @@ object RedisStress extends App {
     val keySize = KeySize()
     val valueSize = ValueSize()
     val nworkers = Nworkers()
-    val stats = Stats()
-    val tracing = Tracing()
   }
   val count = new AtomicLong
 

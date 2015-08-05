@@ -1,6 +1,6 @@
-lazy val root = (project in file(".")).
+lazy val simple = (project in file("simple")).
   settings(
-    name := "finagle-redis-stress",
+    name := "finagle-redis-stress-simple",
     version := "1.0",
     scalaVersion := "2.11.7",
     libraryDependencies ++= Seq(
