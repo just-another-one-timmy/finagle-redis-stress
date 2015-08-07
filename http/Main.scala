@@ -60,9 +60,9 @@ object Server extends App {
       def apply(req: httpx.Request): Future[httpx.Response] = {
         val returnResponse = new Promise[httpx.Response]
 
-        val f1 = redisClient.get(key1).within(timer, Duration(redisTimeoutMs, TimeUnit.MILLISECONDS))
-        val f2 = redisClient.hGetAll(key2).within(timer, Duration(redisTimeoutMs, TimeUnit.MILLISECONDS))
-        val f3 = redisClient.hGetAll(key3).within(timer, Duration(redisTimeoutMs, TimeUnit.MILLISECONDS))
+        val f1 = redisClient.get(key1)
+        val f2 = redisClient.hGetAll(key2)
+        val f3 = redisClient.hGetAll(key3)
 
         val f = Future.collect(Seq(f1, f2, f3)).within(timer, Duration(redisTimeoutMs, TimeUnit.MILLISECONDS)) rescue {
           case _: Exception => {
