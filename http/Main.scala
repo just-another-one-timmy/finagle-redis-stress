@@ -1,5 +1,9 @@
 package com.timmy.redis.http
 
+import com.twitter.finagle.httpx.Response
+import com.twitter.finagle.util.DefaultTimer
+import java.util.concurrent.{ TimeUnit, TimeoutException }
+import com.twitter.util.{ Duration, Future, Promise }
 import com.twitter.finagle.{Httpx, Service}
 import com.twitter.finagle.httpx
 import com.twitter.util.{Await, Future}
@@ -30,11 +34,15 @@ class PersistentService[Req, Rep](factory: ServiceFactory[Req, Rep]) extends Ser
 }
 
 object Server extends App {
-  val key = StringToChannelBuffer("A20")
+  val key1 = StringToChannelBuffer("A20")
+  val key2 = StringToChannelBuffer("APPH:1:ebf4cb5d-b99d-45ed-9c6c-18587dfac9e9")
+  val key3 = StringToChannelBuffer("H:1:ebf4cb5d-b99d-45ed-9c6c-18587dfac9e9")
 
   def main() {
+    val timer = DefaultTimer.twitter
     val hosts = Hosts()
     val nworkers = Nworkers()
+    val redisTimeoutMs = RedisTimeoutMs()
 
     var builder = ClientBuilder()
       .name("rc")
@@ -44,31 +52,30 @@ object Server extends App {
 
     println(hosts)
 
-    if (nworkers > -1) {
-      builder = builder.channelFactory(
-        new NioClientSocketChannelFactory(
-          Executors.newCachedThreadPool(new NamedPoolThreadFactory("redisboss")),
-          Executors.newCachedThreadPool(new NamedPoolThreadFactory("redisIO")),
-          nworkers
-        )
-      )
-    }
-
     val factory = builder.buildFactory()
     val svc = new PersistentService(factory)
     val redisClient: RedisClient = RedisClient(svc)
 
     val service = new Service[httpx.Request, httpx.Response] {
       def apply(req: httpx.Request): Future[httpx.Response] = {
-        val uuid = java.util.UUID.randomUUID.toString
-        redisClient.get(key).map(response => {
-          val res = httpx.Response()
-          res.contentString = response match {
-            case Some(c) => CBToString(response.get)
-            case None => "[None]"
+        val returnResponse = new Promise[httpx.Response]
+
+        val f1 = redisClient.get(key1).within(timer, Duration(redisTimeoutMs, TimeUnit.MILLISECONDS))
+        val f2 = redisClient.hGetAll(key2).within(timer, Duration(redisTimeoutMs, TimeUnit.MILLISECONDS))
+        val f3 = redisClient.hGetAll(key3).within(timer, Duration(redisTimeoutMs, TimeUnit.MILLISECONDS))
+
+        val f = Future.collect(Seq(f1, f2, f3)).within(timer, Duration(redisTimeoutMs, TimeUnit.MILLISECONDS)) rescue {
+          case _: Exception => {
+            returnResponse.setValue(httpx.Response(req.version, httpx.Status(500)))
+            Future.value(Unit)
           }
-          res
+        }
+
+        f.map(_ => {
+          returnResponse.setValue(httpx.Response(req.version, httpx.Status(200)))
         })
+
+        returnResponse
     }}
     val server = Httpx.serve(":8200", service)
     Await.ready(server)
