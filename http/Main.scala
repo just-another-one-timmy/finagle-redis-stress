@@ -33,16 +33,13 @@ object Server extends App {
   val key = StringToChannelBuffer("A20")
 
   def main() {
-    val concurrency = Concurrency()
     val hosts = Hosts()
-    val valueSize = ValueSize()
     val nworkers = Nworkers()
 
-    println("Hi there.")
     var builder = ClientBuilder()
       .name("rc")
       .codec(RedisCodec())
-      .hostConnectionLimit(concurrency)
+      .hostConnectionLimit(1)
       .hosts(hosts)
 
     println(hosts)
@@ -63,6 +60,7 @@ object Server extends App {
 
     val service = new Service[httpx.Request, httpx.Response] {
       def apply(req: httpx.Request): Future[httpx.Response] =
+        val uuid = java.util.UUID.randomUUID.toString
         redisClient.get(key).map(response => {
           val res = httpx.Response()
           res.contentString = response match {
