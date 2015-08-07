@@ -59,7 +59,7 @@ object Server extends App {
     val redisClient: RedisClient = RedisClient(svc)
 
     val service = new Service[httpx.Request, httpx.Response] {
-      def apply(req: httpx.Request): Future[httpx.Response] =
+      def apply(req: httpx.Request): Future[httpx.Response] = {
         val uuid = java.util.UUID.randomUUID.toString
         redisClient.get(key).map(response => {
           val res = httpx.Response()
@@ -69,7 +69,7 @@ object Server extends App {
           }
           res
         })
-    }
+    }}
     val server = Httpx.serve(":8200", service)
     Await.ready(server)
   }
