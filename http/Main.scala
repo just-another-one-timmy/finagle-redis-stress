@@ -1,5 +1,6 @@
 package com.timmy.redis.http
 
+import scala.collection.mutable.ArrayBuffer
 import com.twitter.finagle.httpx.Response
 import com.twitter.finagle.util.DefaultTimer
 import java.util.concurrent.{ TimeUnit, TimeoutException }
@@ -41,23 +42,27 @@ object Server extends App {
   def main() {
     val timer = DefaultTimer.twitter
     val hosts = Hosts()
-    val nworkers = Nworkers()
     val redisTimeoutMs = RedisTimeoutMs()
 
     var builder = ClientBuilder()
       .name("rc")
       .codec(RedisCodec())
-      .hostConnectionLimit(1)
+      .hostConnectionLimit(Concurrency())
       .hosts(hosts)
 
     println(hosts)
 
     val factory = builder.buildFactory()
-    val svc = new PersistentService(factory)
-    val redisClient: RedisClient = RedisClient(svc)
+    val clients = ArrayBuffer[RedisClient]()
+    for (_ <- 0 until Concurrency()) {
+      val client = RedisClient(new PersistentService(factory))
+      clients += client
+    }
+    val roundRobinPool = new RoundRobinPool[RedisClient](clients.toArray)
 
     val service = new Service[httpx.Request, httpx.Response] {
       def apply(req: httpx.Request): Future[httpx.Response] = {
+        val redisClient = roundRobinPool.get()
         val returnResponse = new Promise[httpx.Response]
 
         val f1 = redisClient.get(key1)
